@@ -3,10 +3,6 @@ An **ML-powered, educational web application** that demonstrates how **machine l
 
 This project is designed to make **diagnostic reasoning transparent**, intuitive, and interactive - especially for students, researchers, and developers exploring medical ML concepts.
 
----
-## ⚠️ Disclaimer
-
-> **Educational Use Only**
 
 This project is intended strictly for **learning, research, and demonstration purposes**.  
 It is **not a medical tool** and must **not** be used for real-world diagnosis or treatment decisions.
