@@ -4,6 +4,6 @@
 
 [[redirects]]
   from = "/*"
-  to = "https://disease-prediction-dbgi.onrender.com/:splat"
+  to = "https://disease-predictor-v2.onrender.com/"
   status = 200
   force = true
