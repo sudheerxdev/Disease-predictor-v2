@@ -1,12 +1,23 @@
 from flask import Blueprint, request, jsonify, render_template, send_file
-from datetime import datetime
+from datetime import datetime, timezone
 import csv
 import os
 import io
-#pdf generation imports
-from reportlab.lib.pagesizes import letter  
+import logging
+
+logger = logging.getLogger(__name__)
+
+# pdf generation imports
+from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Table,
+    TableStyle,
+    Paragraph,
+    Spacer,
+    PageBreak,
+)
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 
@@ -16,17 +27,19 @@ from backend.models.ml_model import ml_model
 
 disease_bp = Blueprint("disease", __name__)
 
+
 def get_project_root():
     """Helper function to get the project root directory"""
     # Go up from backend/routes/ to project root
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 def load_diseases():
     """Helper function to load diseases from CSV"""
     csv_path = os.path.join(get_project_root(), "hospital_data.csv")
     diseases = []
     try:
-        with open(csv_path, newline="", encoding='utf-8') as csvfile:
+        with open(csv_path, newline="", encoding="utf-8") as csvfile:
             reader = csv.DictReader(csvfile)
             diseases = [row["Disease"] for row in reader]
         print(f"Loaded {len(diseases)} diseases from CSV")
@@ -36,13 +49,14 @@ def load_diseases():
         print(f"Error loading diseases: {e}")
     return diseases
 
+
 @disease_bp.route("/")
 def home():
     """Render the home page with ML Prediction"""
     # diseases = load_diseases() # OLD: Loaded from CSV
     # NEW: Load only diseases supported by the ML model
     ml_diseases = ml_model.get_available_diseases()
-    diseases = [d.replace('_', ' ').title() for d in ml_diseases]
+    diseases = [d.replace("_", " ").title() for d in ml_diseases]
     return render_template("home.html", diseases=diseases)
 
 
@@ -57,14 +71,14 @@ def calculator():
 def preset():
     """Handle preset disease selection"""
     disease_name = request.json.get("disease")
-    
+
     if not disease_name:
         return jsonify({"error": "Disease name is required"}), 400
-    
+
     try:
         csv_path = os.path.join(get_project_root(), "hospital_data.csv")
-        
-        with open(csv_path, newline="", encoding='utf-8') as csvfile:
+
+        with open(csv_path, newline="", encoding="utf-8") as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
                 if row["Disease"].lower() == disease_name.lower():
@@ -78,12 +92,14 @@ def preset():
                     except ValueError as e:
                         return jsonify({"error": str(e)}), 400
 
-                    return jsonify({
-                        "p_d_given_pos": round(p_d_given_pos, 4),
-                        "prior": p_d,
-                        "sensitivity": sensitivity,
-                        "falsePositive": false_pos
-                    })
+                    return jsonify(
+                        {
+                            "p_d_given_pos": round(p_d_given_pos, 4),
+                            "prior": p_d,
+                            "sensitivity": sensitivity,
+                            "falsePositive": false_pos,
+                        }
+                    )
 
         return jsonify({"error": "Disease not found"}), 404
 
@@ -105,9 +121,15 @@ def disease():
         test_result = data.get("testResult", "positive").lower()
 
         # Input validation
-        for name, value in [("Prevalence", p_d), ("Sensitivity", sensitivity), ("FalsePositive", false_pos)]:
+        for name, value in [
+            ("Prevalence", p_d),
+            ("Sensitivity", sensitivity),
+            ("FalsePositive", false_pos),
+        ]:
             if not (0.0 <= value <= 1.0):
-                raise ValueError(f"{name} must be between 0 and 1 (inclusive). Got {value}.")
+                raise ValueError(
+                    f"{name} must be between 0 and 1 (inclusive). Got {value}."
+                )
 
         if test_result not in {"positive", "negative"}:
             raise ValueError('testResult must be either "positive" or "negative".')
@@ -123,26 +145,32 @@ def disease():
             denominator = numerator + specificity * (1 - p_d)
 
         if denominator == 0:
-            return jsonify({
-                "error": "Calculation error: Division by zero. Please check your input values."
-            }), 400
+            return (
+                jsonify(
+                    {
+                        "error": "Calculation error: Division by zero. Please check your input values."
+                    }
+                ),
+                400,
+            )
 
         p_d_given_result = numerator / denominator
 
-        return jsonify({
-            "p_d_given_result": round(p_d_given_result, 4),
-            "test_result": test_result
-        })
+        return jsonify(
+            {"p_d_given_result": round(p_d_given_result, 4), "test_result": test_result}
+        )
 
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
+
 @disease_bp.route("/contact")
 def contact():
     """Render the Contact page"""
     return render_template("contact.html")
+
 
 @disease_bp.route("/gemini-recommendations", methods=["POST"])
 def gemini_recommendations():
@@ -156,32 +184,43 @@ def gemini_recommendations():
         posterior_probability = float(data.get("posterior_probability"))
         test_result = data.get("test_result", "positive")
         language = data.get("language", "english")  # Default to English
-        
+
         # Call Gemini API
         result = generate_recommendations(
             disease_name=disease_name,
             prior_probability=prior_probability,
             posterior_probability=posterior_probability,
             test_result=test_result,
-            language=language
+            language=language,
         )
-        
-        return jsonify(result)
-    
-    except ValueError as e:
-        return jsonify({
-            "success": False,
-            "error": f"Invalid input: {str(e)}",
-            "recommendations": "Unable to generate recommendations. Please check your inputs."
-        }), 400
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e),
-            "recommendations": "Unable to generate recommendations. Please try again later."
-        }), 500
 
-#PDF generation route
+        return jsonify(result)
+
+    except ValueError as e:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": f"Invalid input: {str(e)}",
+                    "recommendations": "Unable to generate recommendations. Please check your inputs.",
+                }
+            ),
+            400,
+        )
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": str(e),
+                    "recommendations": "Unable to generate recommendations. Please try again later.",
+                }
+            ),
+            500,
+        )
+
+
+# PDF generation route
 @disease_bp.route("/download-results", methods=["POST"])
 def download_results():
     """Download calculation results as PDF only"""
@@ -199,10 +238,7 @@ def download_results():
         # Create PDF
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
-            buffer,
-            pagesize=letter,
-            topMargin=0.5 * inch,
-            bottomMargin=0.5 * inch
+            buffer, pagesize=letter, topMargin=0.5 * inch, bottomMargin=0.5 * inch
         )
 
         styles = getSampleStyleSheet()
@@ -224,7 +260,7 @@ def download_results():
         # Timestamp
         story.append(
             Paragraph(
-                f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
                 styles["Normal"],
             )
         )
@@ -250,7 +286,12 @@ def download_results():
                     ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                     ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                     ("GRID", (0, 0), (-1, -1), 1, colors.black),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [colors.white, colors.lightgrey],
+                    ),
                 ]
             )
         )
@@ -260,9 +301,9 @@ def download_results():
 
         # Risk assessment
         risk_level = (
-            "High Risk" if posterior > 0.7 else
-            "Moderate Risk" if posterior > 0.3 else
-            "Low Risk"
+            "High Risk"
+            if posterior > 0.7
+            else "Moderate Risk" if posterior > 0.3 else "Low Risk"
         )
 
         story.append(
@@ -281,12 +322,12 @@ def download_results():
         doc.title = "Possibility Report"
         doc.build(story)  #  browser tab title / filename
         buffer.seek(0)
-        #dowload pdf name
+        # dowload pdf name
         return send_file(
             buffer,
             mimetype="application/pdf",
             as_attachment=True,
-            download_name="Possibility_Report.pdf"
+            download_name="Possibility_Report.pdf",
         )
 
     except Exception as e:
@@ -297,7 +338,7 @@ def download_results():
 def download_ml_results():
     """Download ML prediction results as PDF"""
     data = request.json
-    
+
     try:
         disease_name = data.get("disease_name", "Unknown Disease")
         ml_probability = float(data.get("ml_probability", 0))
@@ -306,107 +347,609 @@ def download_ml_results():
         posterior_probability = float(data.get("posterior_probability", 0))
         risk_level = data.get("risk_level", "Low Risk")
         missing_symptoms = data.get("missing_symptoms", [])
-        
+
         # Create PDF
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+        doc = SimpleDocTemplate(
+            buffer, pagesize=letter, topMargin=0.5 * inch, bottomMargin=0.5 * inch
+        )
         styles = getSampleStyleSheet()
         title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
+            "CustomTitle",
+            parent=styles["Heading1"],
             fontSize=24,
-            textColor=colors.HexColor('#1f77b4'),
+            textColor=colors.HexColor("#1f77b4"),
             spaceAfter=12,
-            alignment=1
+            alignment=1,
         )
-        
+
         story = []
-        story.append(Paragraph("ML Disease Prediction Report\n(Bayesian Analysis)", title_style))
-        story.append(Spacer(1, 0.3*inch))
-        
+        story.append(
+            Paragraph("ML Disease Prediction Report\n(Bayesian Analysis)", title_style)
+        )
+        story.append(Spacer(1, 0.3 * inch))
+
         # Add timestamp
-        timestamp_text = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        story.append(Paragraph(timestamp_text, styles['Normal']))
-        story.append(Spacer(1, 0.2*inch))
-        
+        timestamp_text = (
+            f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        )
+        story.append(Paragraph(timestamp_text, styles["Normal"]))
+        story.append(Spacer(1, 0.2 * inch))
+
         # Disease and ML Prediction
-        story.append(Paragraph(f"<b>Disease:</b> {disease_name}", styles['Normal']))
-        story.append(Spacer(1, 0.1*inch))
-        story.append(Paragraph(f"<b>ML Prediction Probability:</b> {ml_probability:.2%}", styles['Normal']))
-        story.append(Spacer(1, 0.2*inch))
-        
+        story.append(Paragraph(f"<b>Disease:</b> {disease_name}", styles["Normal"]))
+        story.append(Spacer(1, 0.1 * inch))
+        story.append(
+            Paragraph(
+                f"<b>ML Prediction Probability:</b> {ml_probability:.2%}",
+                styles["Normal"],
+            )
+        )
+        story.append(Spacer(1, 0.2 * inch))
+
         # Create Bayesian Analysis table
         data_table = [
-            ['Bayesian Analysis', 'Value'],
-            ['Prior Probability', f"{prior_probability:.4f}"],
-            ['Likelihood', f"{likelihood:.4f}"],
-            ['Posterior Probability', f"{posterior_probability:.4f}"],
-            ['Risk Assessment', risk_level]
+            ["Bayesian Analysis", "Value"],
+            ["Prior Probability", f"{prior_probability:.4f}"],
+            ["Likelihood", f"{likelihood:.4f}"],
+            ["Posterior Probability", f"{posterior_probability:.4f}"],
+            ["Risk Assessment", risk_level],
         ]
-        
-        table = Table(data_table, colWidths=[2.5*inch, 2.5*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f0f0')]),
-        ]))
-        
+
+        table = Table(data_table, colWidths=[2.5 * inch, 2.5 * inch])
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f77b4")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 12),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                    ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [colors.white, colors.HexColor("#f0f0f0")],
+                    ),
+                ]
+            )
+        )
+
         story.append(table)
-        story.append(Spacer(1, 0.3*inch))
-        
+        story.append(Spacer(1, 0.3 * inch))
+
         # Add Missing Symptoms Table if present
         if missing_symptoms:
-            story.append(Paragraph("<b>Missing Key Symptoms</b>", styles['Normal']))
-            story.append(Spacer(1, 0.1*inch))
-            
-            ms_data = [['Symptom', 'Importance']]
+            story.append(Paragraph("<b>Missing Key Symptoms</b>", styles["Normal"]))
+            story.append(Spacer(1, 0.1 * inch))
+
+            ms_data = [["Symptom", "Importance"]]
             for item in missing_symptoms:
-                ms_data.append([item['name'], f"{item['weight']*100:.0f}%"])
-                
-            ms_table = Table(ms_data, colWidths=[2.5*inch, 2.5*inch])
-            ms_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e74c3c')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ]))
+                ms_data.append([item["name"], f"{item['weight']*100:.0f}%"])
+
+            ms_table = Table(ms_data, colWidths=[2.5 * inch, 2.5 * inch])
+            ms_table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e74c3c")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                    ]
+                )
+            )
             story.append(ms_table)
-            story.append(Spacer(1, 0.3*inch))
-        
+            story.append(Spacer(1, 0.3 * inch))
+
         # Add risk color coding
-        risk_color = "#27ae60" if risk_level == "Low Risk" else ("#f39c12" if risk_level == "Moderate Risk" else "#e74c3c")
-        story.append(Paragraph(f"<font color='{risk_color}'><b>Risk Level: {risk_level}</b></font>", styles['Normal']))
-        story.append(Spacer(1, 0.2*inch))
-        
+        risk_color = (
+            "#27ae60"
+            if risk_level == "Low Risk"
+            else ("#f39c12" if risk_level == "Moderate Risk" else "#e74c3c")
+        )
+        story.append(
+            Paragraph(
+                f"<font color='{risk_color}'><b>Risk Level: {risk_level}</b></font>",
+                styles["Normal"],
+            )
+        )
+        story.append(Spacer(1, 0.2 * inch))
+
         # Add disclaimer
         disclaimer = "<i>Note: This report is for educational purposes only. Always consult with healthcare professionals for medical advice.</i>"
-        story.append(Paragraph(disclaimer, styles['Normal']))
-        
+        story.append(Paragraph(disclaimer, styles["Normal"]))
+
         doc.build(story)
         buffer.seek(0)
-        
-        filename = f"ml_prediction_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+
+        filename = f"ml_prediction_report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.pdf"
         return send_file(
             buffer,
-            mimetype='application/pdf',
+            mimetype="application/pdf",
             as_attachment=True,
-            download_name=filename
+            download_name=filename,
         )
-    
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    
 
-@disease_bp.route('/disease-detection-dashboard')
+
+@disease_bp.route("/disease-detection-dashboard")
 def disease_detection_dashboard():
     """Render the disease detection dashboard page"""
     # The types include the list of disease detection types available (Only "Eyes" for now)
     types = ["Eyes", "Skin"]
-    return render_template('disease_detection_dashboard.html', types=types)
+    return render_template("disease_detection_dashboard.html", types=types)
+
+
+# ========== ML PREDICTION API ENDPOINTS ==========
+# These endpoints provide real ML-based disease predictions
+
+
+@disease_bp.route("/api/disease/<disease>/symptoms", methods=["GET"])
+def get_disease_symptoms_api(disease):
+    """
+    Get symptoms associated with a specific disease.
+
+    Args:
+        disease: Disease name (e.g., "diabetes", "hypertension")
+
+    Returns:
+        JSON: {
+            "disease": "diabetes",
+            "symptoms": {
+                "increased_thirst": "Increased Thirst",
+                "frequent_urination": "Frequent Urination",
+                ...
+            }
+        }
+    """
+    try:
+        symptoms_dict = ml_model.get_disease_symptoms(disease)
+
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "disease": disease,
+                    "symptoms": symptoms_dict,
+                    "total_symptoms": len(symptoms_dict),
+                }
+            ),
+            200,
+        )
+
+    except ValueError as e:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": f"Disease '{disease}' not found",
+                    "message": str(e),
+                }
+            ),
+            404,
+        )
+    except (KeyError, AttributeError) as e:
+        return (
+            jsonify({"success": False, "error": "Invalid request", "message": str(e)}),
+            400,
+        )
+
+
+@disease_bp.route("/api/predict/disease", methods=["POST"])
+def predict_disease_api():
+    """
+    Make ML-based disease prediction based on symptoms and patient data.
+
+    Request Body:
+    {
+        "disease": "diabetes",
+        "symptoms": ["increased_thirst", "frequent_urination", "fatigue"],
+        "age": 45,
+        "height": 170,
+        "weight": 75
+    }
+
+    Response:
+    {
+        "success": true,
+        "prediction": {
+            "disease": "diabetes",
+            "raw_probability": 0.82,
+            "calibrated_probability": 0.78,
+            "confidence_score": 0.75,
+            "symptoms_matched": 3,
+            "total_symptoms": 10,
+            "bmi": 25.9,
+            "bmi_category": "Overweight"
+        }
+    }
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"success": False, "error": "No request body provided"}), 400
+
+        disease = data.get("disease")
+        symptoms = data.get("symptoms", [])
+        age = data.get("age")
+        height = data.get("height")
+        weight = data.get("weight")
+
+        # Validate inputs
+        if not disease:
+            return (
+                jsonify({"success": False, "error": "Missing 'disease' parameter"}),
+                400,
+            )
+
+        if not isinstance(symptoms, list):
+            return (
+                jsonify({"success": False, "error": "'symptoms' must be a list"}),
+                400,
+            )
+
+        # Get prediction from ML model
+        prediction = ml_model.predict_disease_probability(
+            disease=disease,
+            symptoms=symptoms,
+            age=age,
+            height_cm=height,
+            weight_kg=weight,
+        )
+
+        return jsonify({"success": True, "prediction": prediction}), 200
+
+    except ValueError as e:
+        return (
+            jsonify({"success": False, "error": "Invalid disease", "message": str(e)}),
+            400,
+        )
+    except (KeyError, TypeError, RuntimeError, AttributeError) as e:
+        return (
+            jsonify(
+                {"success": False, "error": "Prediction failed", "message": str(e)}
+            ),
+            500,
+        )
+
+
+@disease_bp.route("/api/predict/multiple", methods=["POST"])
+def predict_multiple_diseases_api():
+    """
+    Get predictions for multiple diseases based on symptoms.
+
+    Request Body:
+    {
+        "symptoms": ["increased_thirst", "frequent_urination", "fatigue"],
+        "age": 45,
+        "height": 170,
+        "weight": 75
+    }
+
+    Response:
+    {
+        "success": true,
+        "predictions": [
+            {
+                "disease": "diabetes",
+                "calibrated_probability": 0.82,
+                "confidence_score": 0.75,
+                ...
+            },
+            {
+                "disease": "hypertension",
+                "calibrated_probability": 0.45,
+                "confidence_score": 0.35,
+                ...
+            },
+            ...
+        ],
+        "top_disease": "diabetes",
+        "top_probability": 0.82
+    }
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"success": False, "error": "No request body provided"}), 400
+
+        symptoms = data.get("symptoms", [])
+        age = data.get("age")
+        height = data.get("height")
+        weight = data.get("weight")
+
+        if not isinstance(symptoms, list):
+            return (
+                jsonify({"success": False, "error": "'symptoms' must be a list"}),
+                400,
+            )
+
+        if len(symptoms) == 0:
+            return (
+                jsonify(
+                    {"success": False, "error": "At least one symptom must be provided"}
+                ),
+                400,
+            )
+
+        # Get predictions for all diseases
+        predictions = ml_model.predict_multiple_diseases(symptoms)
+
+        # Enhance predictions with age/weight data if provided
+        if age is not None and height is not None and weight is not None:
+            for pred in predictions:
+                disease = pred["disease"]
+                single_pred = ml_model.predict_disease_probability(
+                    disease=disease,
+                    symptoms=symptoms,
+                    age=age,
+                    height_cm=height,
+                    weight_kg=weight,
+                )
+                # Update with calibrated probability from full prediction
+                pred.update(
+                    {
+                        "calibrated_probability": single_pred["calibrated_probability"],
+                        "confidence_score": single_pred["confidence_score"],
+                        "bmi": single_pred.get("bmi"),
+                        "bmi_category": single_pred.get("bmi_category"),
+                    }
+                )
+
+        # Sort by calibrated probability
+        predictions.sort(key=lambda x: x.get("calibrated_probability", 0), reverse=True)
+
+        top_disease = predictions[0]["disease"] if predictions else None
+        top_probability = (
+            predictions[0].get("calibrated_probability", 0) if predictions else 0
+        )
+
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "predictions": predictions[:10],  # Return top 10
+                    "total_predictions": len(predictions),
+                    "top_disease": top_disease,
+                    "top_probability": round(top_probability, 3),
+                    "symptoms_provided": len(symptoms),
+                }
+            ),
+            200,
+        )
+
+    except (KeyError, TypeError, RuntimeError, AttributeError) as e:
+        return (
+            jsonify(
+                {"success": False, "error": "Prediction failed", "message": str(e)}
+            ),
+            500,
+        )
+
+
+@disease_bp.route("/api/diseases/list", methods=["GET"])
+def get_available_diseases_api():
+    """
+    Get list of all available diseases.
+
+    Response:
+    {
+        "success": true,
+        "diseases": ["diabetes", "hypertension", "covid19", ...],
+        "total_diseases": 34
+    }
+    """
+    try:
+        diseases = ml_model.get_available_diseases()
+
+        return (
+            jsonify(
+                {"success": True, "diseases": diseases, "total_diseases": len(diseases)}
+            ),
+            200,
+        )
+
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Failed to retrieve diseases",
+                    "message": str(e),
+                }
+            ),
+            500,
+        )
+
+
+# ========== LEGACY API ENDPOINTS (for home.html compatibility) ==========
+# These endpoints match the format expected by home.html dashboard
+
+
+@disease_bp.route("/api/ml/symptoms/<disease>", methods=["GET"])
+def get_ml_symptoms_legacy(disease):
+    """
+    Legacy endpoint: Get symptoms for disease prediction (home.html format).
+
+    Response:
+    {
+        "success": true,
+        "symptoms": [
+            {"key": "fever", "name": "Fever"},
+            {"key": "cough", "name": "Cough"},
+            ...
+        ]
+    }
+    """
+    try:
+        symptoms_dict = ml_model.get_disease_symptoms(disease)
+
+        # Convert dict to list of objects for frontend
+        symptoms_list = [
+            {"key": key, "name": name} for key, name in symptoms_dict.items()
+        ]
+
+        return jsonify({"success": True, "symptoms": symptoms_list}), 200
+
+    except ValueError as e:
+        return (
+            jsonify({"success": False, "error": f"Disease '{disease}' not found"}),
+            404,
+        )
+    except Exception as e:
+        return jsonify({"success": False, "error": "Failed to load symptoms"}), 500
+
+
+@disease_bp.route("/api/ml/predict", methods=["POST"])
+def predict_ml_legacy():
+    """
+    Legacy endpoint: Make ML disease prediction (home.html format).
+
+    Request:
+    {
+        "disease": "diabetes",
+        "symptoms": ["fever", "cough", "fatigue"],
+        "age": 45,
+        "height_cm": 170,
+        "weight_kg": 75
+    }
+
+    Response:
+    {
+        "success": true,
+        "disease": "diabetes",
+        "ml_prediction": {
+            "raw_probability": 82.5,
+            "missing_symptoms": [
+                {"name": "Symptom Name", "weight": 0.85},
+                ...
+            ]
+        },
+        "bayesian_analysis": {
+            "prior": 15.5,
+            "likelihood": 75.2,
+            "posterior": 68.3
+        },
+        "risk_assessment": {
+            "level": "High",
+            "color": "danger",
+            "description": "Based on symptoms and analysis..."
+        }
+    }
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"success": False, "error": "No request body"}), 400
+
+        disease = data.get("disease")
+        symptoms = data.get("symptoms", [])
+        age = data.get("age")
+        height_cm = data.get("height_cm")
+        weight_kg = data.get("weight_kg")
+
+        if not disease or not symptoms:
+            return (
+                jsonify({"success": False, "error": "Missing disease or symptoms"}),
+                400,
+            )
+
+        # Get ML prediction
+        prediction = ml_model.predict_disease_probability(
+            disease=disease,
+            symptoms=symptoms,
+            age=age,
+            height_cm=height_cm,
+            weight_kg=weight_kg,
+        )
+
+        # Convert height and weight to proper names
+        height = height_cm if height_cm else None
+        weight = weight_kg if weight_kg else None
+
+        # Get all symptoms for the disease to identify missing ones
+        all_symptoms_dict = ml_model.get_disease_symptoms(disease)
+        all_symptoms_keys = list(all_symptoms_dict.keys())
+
+        # Identify missing symptoms
+        missing_symptoms = []
+        disease_weights = ml_model.disease_weights.get(
+            ml_model._get_disease_key(disease), {}
+        )
+        symptom_weights = disease_weights.get("symptoms", {})
+
+        for symptom_key, weight in symptom_weights.items():
+            if symptom_key not in symptoms:
+                symptom_name = all_symptoms_dict.get(
+                    symptom_key, symptom_key.replace("_", " ").title()
+                )
+                missing_symptoms.append({"name": symptom_name, "weight": weight})
+
+        # Sort missing symptoms by weight (highest first)
+        missing_symptoms.sort(key=lambda x: x["weight"], reverse=True)
+
+        # Extract values for response
+        raw_probability = prediction.get("raw_probability", 0)
+        calibrated_probability = prediction.get("calibrated_probability", 0)
+
+        # Convert to percentages (0-100)
+        raw_prob_percent = round(raw_probability * 100, 1)
+        cal_prob_percent = round(calibrated_probability * 100, 1)
+
+        # Determine risk level and color based on probability
+        if cal_prob_percent >= 70:
+            risk_level = "High"
+            risk_color = "danger"
+        elif cal_prob_percent >= 40:
+            risk_level = "Moderate"
+            risk_color = "warning"
+        else:
+            risk_level = "Low"
+            risk_color = "success"
+
+        # Construct response in format expected by displayResults()
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "disease": disease,
+                    "ml_prediction": {
+                        "raw_probability": raw_prob_percent,
+                        "calibrated_probability": cal_prob_percent,
+                        "missing_symptoms": missing_symptoms[:5],  # Top 5 missing
+                    },
+                    "bayesian_analysis": {
+                        "prior": round(prediction.get("bayesian_prior", 0) * 100, 1),
+                        "likelihood": round(
+                            prediction.get("bayesian_likelihood", 0) * 100, 1
+                        ),
+                        "posterior": round(
+                            prediction.get("bayesian_posterior", 0) * 100, 1
+                        ),
+                    },
+                    "risk_assessment": {
+                        "level": risk_level,
+                        "color": risk_color,
+                        "description": f"Based on {len(symptoms)} selected symptoms. "
+                        f"Calibrated probability: {cal_prob_percent}%. "
+                        f"Review missing symptoms for better accuracy.",
+                    },
+                }
+            ),
+            200,
+        )
+
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except (KeyError, TypeError, RuntimeError, AttributeError) as e:
+        logger.exception("Prediction endpoint error: %s", str(e))
+        return jsonify({"success": False, "error": "Prediction failed"}), 500

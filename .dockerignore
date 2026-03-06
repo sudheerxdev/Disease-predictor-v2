@@ -1,0 +1,27 @@
+# Docker specific ignores
+__pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.env
+.env.local
+.vscode/
+.idea/
+*.log
+site.db
+*.db
+.git
+.gitignore
+.github/
+README.md
+DEPLOYMENT.md
+docs/
+tests/
+*.md
+*.rst

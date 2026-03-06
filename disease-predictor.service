@@ -1,0 +1,36 @@
+[Unit]
+Description=Disease Predictor Application
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/disease-predictor
+Environment="PATH=/var/www/disease-predictor/venv/bin"
+Environment="FLASK_ENV=production"
+EnvironmentFile=/var/www/disease-predictor/.env
+ExecStart=/var/www/disease-predictor/venv/bin/gunicorn \
+    --workers=4 \
+    --worker-class=gevent \
+    --bind=127.0.0.1:5000 \
+    --timeout=120 \
+    --access-logfile=/var/log/disease-predictor/access.log \
+    --error-logfile=/var/log/disease-predictor/error.log \
+    --log-level=info \
+    wsgi:app
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/disease-predictor/logs /var/www/disease-predictor/uploads
+
+[Install]
+WantedBy=multi-user.target

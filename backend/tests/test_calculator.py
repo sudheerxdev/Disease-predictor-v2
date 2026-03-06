@@ -4,10 +4,10 @@ import os
 import csv
 import io
 import sys
-from src.calculator import bayesian_survival, load_data, display_results
+from backend.utils.calculator import bayesian_survival, load_data, display_results
+
 
 class TestBayesianCalculator(unittest.TestCase):
-
 
     def test_mid_range_probabilities(self):
         self.assertAlmostEqual(bayesian_survival(0.5, 0.5, 0.5), 0.5, places=4)
@@ -36,20 +36,23 @@ class TestBayesianCalculator(unittest.TestCase):
     # Test load_data
     # -----------------------------
     def test_load_data_empty_file(self):
-        temp_file = tempfile.NamedTemporaryFile(delete=False, mode='w', newline='')
+        temp_file = tempfile.NamedTemporaryFile(delete=False, mode="w", newline="")
         temp_file.close()
         results = load_data(temp_file.name)
         os.unlink(temp_file.name)
         self.assertEqual(results, [])
 
     def test_load_data_malformed_warn(self):
-        temp_file = tempfile.NamedTemporaryFile(delete=False, mode='w', newline='')
+        temp_file = tempfile.NamedTemporaryFile(delete=False, mode="w", newline="")
         temp_file.write("prior,sensitivity,specificity\n0.5,abc,0.5\n")
         temp_file.close()
 
         captured = io.StringIO()
         sys.stdout = captured
-        results = load_data(temp_file.name, strict=False)
+        try:
+            results = load_data(temp_file.name)
+        except ValueError:
+            results = []
         sys.stdout = sys.__stdout__
         os.unlink(temp_file.name)
 
@@ -58,39 +61,47 @@ class TestBayesianCalculator(unittest.TestCase):
         self.assertIn("Warning: Dropped 1 invalid row(s)", captured.getvalue())
 
     def test_load_data_large_file(self):
-        temp_file = tempfile.NamedTemporaryFile(delete=False, mode='w', newline='')
-        writer = csv.DictWriter(temp_file, fieldnames=['prior','sensitivity','specificity'])
+        temp_file = tempfile.NamedTemporaryFile(delete=False, mode="w", newline="")
+        writer = csv.DictWriter(
+            temp_file, fieldnames=["prior", "sensitivity", "specificity"]
+        )
         writer.writeheader()
         for i in range(100):
-            writer.writerow({'prior': 0.1*(i%10),'sensitivity':0.5,'specificity':0.5})
+            writer.writerow(
+                {"prior": 0.1 * (i % 10), "sensitivity": 0.5, "specificity": 0.5}
+            )
         temp_file.close()
         results = load_data(temp_file.name)
         os.unlink(temp_file.name)
         self.assertEqual(len(results), 100)
 
     def test_load_data_coercion(self):
-        temp_file = tempfile.NamedTemporaryFile(delete=False, mode='w', newline='')
-        writer = csv.DictWriter(temp_file, fieldnames=['prior','sensitivity','specificity'])
+        temp_file = tempfile.NamedTemporaryFile(delete=False, mode="w", newline="")
+        writer = csv.DictWriter(
+            temp_file, fieldnames=["prior", "sensitivity", "specificity"]
+        )
         writer.writeheader()
         # Out-of-range values
-        writer.writerow({'prior': -0.5, 'sensitivity': 1.2, 'specificity': 0.5})
+        writer.writerow({"prior": -0.5, "sensitivity": 1.2, "specificity": 0.5})
         # Non-numeric row
-        writer.writerow({'prior': 'abc', 'sensitivity': 0.5, 'specificity': 0.5})
+        writer.writerow({"prior": "abc", "sensitivity": 0.5, "specificity": 0.5})
         temp_file.close()
 
         captured = io.StringIO()
         sys.stdout = captured
-        results = load_data(temp_file.name, strict=False)
+        try:
+            results = load_data(temp_file.name)
+        except (ValueError, KeyError):
+            results = []
         sys.stdout = sys.__stdout__
         os.unlink(temp_file.name)
 
         # Out-of-range values coerced to [0,1]
         self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]['prior'], 0.0)
-        self.assertEqual(results[0]['sensitivity'], 1.0)
-        self.assertEqual(results[0]['specificity'], 0.5)
+        self.assertEqual(results[0]["prior"], 0.0)
+        self.assertEqual(results[0]["sensitivity"], 1.0)
+        self.assertEqual(results[0]["specificity"], 0.5)
         self.assertIn("Warning: Dropped 1 invalid row(s)", captured.getvalue())
-
 
     def test_display_results_empty(self):
         captured = io.StringIO()
@@ -101,8 +112,13 @@ class TestBayesianCalculator(unittest.TestCase):
 
     def test_display_results_output(self):
         results = [
-            {'prior': 0.5, 'sensitivity':0.5, 'specificity':0.5, 'posterior':0.5},
-            {'prior': 0.2, 'sensitivity':0.8, 'specificity':0.9, 'posterior': bayesian_survival(0.2,0.8,0.9)}
+            {"prior": 0.5, "sensitivity": 0.5, "specificity": 0.5, "posterior": 0.5},
+            {
+                "prior": 0.2,
+                "sensitivity": 0.8,
+                "specificity": 0.9,
+                "posterior": bayesian_survival(0.2, 0.8, 0.9),
+            },
         ]
         captured = io.StringIO()
         sys.stdout = captured
@@ -111,6 +127,7 @@ class TestBayesianCalculator(unittest.TestCase):
         output = captured.getvalue()
         self.assertIn("Prior: 0.5", output)
         self.assertIn("Specificity: 0.9", output)
+
 
 if __name__ == "__main__":
     unittest.main()

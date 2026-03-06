@@ -1,3 +1,8 @@
+"""
+Application entry point for development
+For production, use: gunicorn -w 4 -b 0.0.0.0:5000 wsgi:app
+"""
+
 from backend import create_app
 from dotenv import load_dotenv
 import os
@@ -5,15 +10,21 @@ import os
 # Load environment variables from .env file
 load_dotenv()
 
-# Create Flask app using the factory function
+# Create Flask app
 app = create_app()
 
-# For Gunicorn or other WSGI servers
-# Gunicorn will use "app" automatically.
-
 if __name__ == "__main__":
-    # Run locally for development
-    print("\n" + "="*50)
-    print("Starting Flask Development Server")
-    print("="*50 + "\n")
-    app.run(debug=True, host="0.0.0.0", port=5001)
+    # Development server configuration
+    host = os.getenv("HOST", "127.0.0.1")
+    port = int(os.getenv("PORT", 5001))
+    debug = os.getenv("FLASK_ENV", "development") == "development"
+
+    print("\n" + "=" * 60)
+    print(
+        f"Starting Disease Predictor - {os.getenv('FLASK_ENV', 'development').upper()}"
+    )
+    print("=" * 60)
+    print(f"Server: http://{host}:{port}")
+    print("=" * 60 + "\n")
+
+    app.run(debug=debug, host=host, port=port, use_reloader=debug)
